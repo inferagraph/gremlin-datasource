@@ -233,8 +233,8 @@ describe('GremlinDatasource', () => {
 
       await ds.getNeighbors('v1');
       expect(mockSubmit).toHaveBeenCalledWith(
-        'g.V(nodeId).repeat(both().simplePath()).times(depth).dedup()',
-        { nodeId: 'v1', depth: 1 },
+        `g.V('v1').repeat(both().simplePath()).times(depth).dedup()`,
+        { depth: 1 },
       );
     });
 
@@ -255,14 +255,11 @@ describe('GremlinDatasource', () => {
 
       const result = await ds.getNeighbors('v1', 1);
 
-      // Edge fetch uses bothE().dedup() — NOT within() — and bound ids
-      // are passed straight through (here the default getCompositeKey
-      // is identity, so they're the bare ids).
-      expect(mockSubmit).toHaveBeenNthCalledWith(
-        3,
-        'g.V(ids).bothE().dedup()',
-        { ids: ['v1', 'v2'] },
-      );
+      // Edge fetch uses bothE().dedup() — NOT within() — and ids are
+      // inlined into the query string as Gremlin literals (here the
+      // default getCompositeKey is identity, so they're bare quoted ids).
+      const [edgeQuery] = mockSubmit.mock.calls[2];
+      expect(edgeQuery).toBe(`g.V('v1', 'v2').bothE().dedup()`);
 
       // Only the v1↔v2 edge survives client-side filtering.
       expect(result.edges).toHaveLength(1);
@@ -329,9 +326,11 @@ describe('GremlinDatasource', () => {
       const [query, bindings] = mockSubmit.mock.calls[0];
       expect(query).toContain('has(T.id, toId)');
       expect(query).not.toContain('hasId(');
-      // toId is bare — it must NOT be wrapped by getCompositeKey, since
-      // T.id is compared against the document id, not the partition pair.
-      expect(bindings).toEqual({ fromId: 'v1', toId: 'v2' });
+      // fromId is inlined into the query (composite-key safe); toId stays
+      // a bare scalar binding because T.id is compared against the
+      // document id, not the partition pair.
+      expect(query).toContain(`g.V('v1')`);
+      expect(bindings).toEqual({ toId: 'v2' });
     });
 
     it('should pass toId bare even when getCompositeKey is configured', async () => {
@@ -344,9 +343,11 @@ describe('GremlinDatasource', () => {
 
       await cosmosDs.findPath('v1', 'v2');
 
-      const [, bindings] = mockSubmit.mock.calls[0];
-      // fromId is composite (used in g.V(...)) — toId is bare (used in has(T.id, ...)).
-      expect(bindings).toEqual({ fromId: ['v1', 'v1'], toId: 'v2' });
+      const [query, bindings] = mockSubmit.mock.calls[0];
+      // fromId is composite, inlined into the query; toId stays a bare
+      // scalar binding (used by has(T.id, ...)).
+      expect(query).toContain(`g.V(['v1', 'v1'])`);
+      expect(bindings).toEqual({ toId: 'v2' });
     });
   });
 

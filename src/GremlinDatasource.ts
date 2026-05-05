@@ -67,7 +67,7 @@ export class GremlinDatasource extends Datasource {
 
   async getNode(id: NodeId): Promise<NodeData | undefined> {
     this.ensureConnected();
-    const result = await this.client!.submit('g.V(id)', { id: this.resolveKey(id) });
+    const result = await this.client!.submit(`g.V(${this.formatKey(this.resolveKey(id))})`);
     const items = result._items || [];
     if (items.length === 0) return undefined;
     return this.transformVertices(items)[0];
@@ -76,15 +76,17 @@ export class GremlinDatasource extends Datasource {
   async getNeighbors(nodeId: NodeId, depth: number = 1): Promise<GraphData> {
     this.ensureConnected();
 
+    const inlinedKey = this.formatKey(this.resolveKey(nodeId));
+
     // Get neighbors up to depth
     const vertexResult = await this.client!.submit(
-      `g.V(nodeId).repeat(both().simplePath()).times(depth).dedup()`,
-      { nodeId: this.resolveKey(nodeId), depth },
+      `g.V(${inlinedKey}).repeat(both().simplePath()).times(depth).dedup()`,
+      { depth },
     );
     const neighborNodes = this.transformVertices(vertexResult._items || []);
 
     // Also get the origin node
-    const originResult = await this.client!.submit('g.V(nodeId)', { nodeId: this.resolveKey(nodeId) });
+    const originResult = await this.client!.submit(`g.V(${inlinedKey})`);
     const originNodes = this.transformVertices(originResult._items || []);
 
     const allNodes = [...originNodes, ...neighborNodes];
@@ -102,9 +104,13 @@ export class GremlinDatasource extends Datasource {
     // vertex id on TinkerPop, and unlike `hasId()` it accepts a plain
     // id (NOT a composite-key tuple) — which is what we want here, since
     // the bound `toId` is the raw vertex id, not the partition pair.
+    //
+    // `fromId` is inlined as a Gremlin literal because Cosmos parameter
+    // bindings reject lists of tuples; see formatKey().
+    const inlinedFrom = this.formatKey(this.resolveKey(fromId));
     const result = await this.client!.submit(
-      `g.V(fromId).repeat(both().simplePath()).until(has(T.id, toId)).limit(1).path()`,
-      { fromId: this.resolveKey(fromId), toId },
+      `g.V(${inlinedFrom}).repeat(both().simplePath()).until(has(T.id, toId)).limit(1).path()`,
+      { toId },
     );
 
     const items = result._items || [];
@@ -171,9 +177,9 @@ export class GremlinDatasource extends Datasource {
   async getContent(nodeId: NodeId): Promise<ContentData | undefined> {
     this.ensureConnected();
 
+    const inlinedKey = this.formatKey(this.resolveKey(nodeId));
     const result = await this.client!.submit(
-      `g.V(nodeId).has('content')`,
-      { nodeId: this.resolveKey(nodeId) },
+      `g.V(${inlinedKey}).has('content')`,
     );
 
     const items = result._items || [];
@@ -209,18 +215,45 @@ export class GremlinDatasource extends Datasource {
   }
 
   /**
+   * Format a resolved key as a Gremlin literal to inline into the query.
+   *
+   * Why inline rather than bind? Cosmos DB Gremlin parameter bindings only
+   * accept scalars or arrays of scalars — bindings can NOT carry tuples
+   * (`[pk, id]`) nor arrays of tuples. When `getCompositeKey` returns a
+   * tuple, the only portable option is to inline the value into the query
+   * string. We always inline (even for the scalar case) for consistency.
+   *
+   * String escaping: Gremlin string literals use single quotes. The
+   * untrusted-input risk is small (ids come from host code) but the library
+   * defends anyway: backslashes become `\\` and single quotes become `\'`.
+   */
+  private formatKey(key: string | [string, string]): string {
+    if (Array.isArray(key)) {
+      return `[${this.escapeString(key[0])}, ${this.escapeString(key[1])}]`;
+    }
+    return this.escapeString(key);
+  }
+
+  private escapeString(value: string): string {
+    return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  }
+
+  /**
    * Fetch edges among a known set of vertices.
    *
-   * The traversal is `g.V(<keys>).bothE().dedup()` — composite-key safe
-   * (each key in <keys> may be a tuple) and avoids `within(<list-of-tuples>)`,
-   * which is unreliable on Cosmos DB Gremlin. We then drop edges with an
-   * endpoint outside the `nodeIds` set client-side, since `bothE()` includes
-   * edges to neighbours we did not request.
+   * The traversal is `g.V(<inlined keys>).bothE().dedup()` — composite-key
+   * safe (each key may be a tuple, inlined directly into the query) and
+   * avoids `within(<list-of-tuples>)`, which is unreliable on Cosmos DB
+   * Gremlin. We then drop edges with an endpoint outside the `nodeIds`
+   * set client-side, since `bothE()` includes edges to neighbours we did
+   * not request.
    */
   private async fetchEdgesAmongNodes(nodeIds: string[]): Promise<EdgeData[]> {
+    const inlinedKeys = nodeIds
+      .map(nid => this.formatKey(this.resolveKey(nid)))
+      .join(', ');
     const result = await this.client!.submit(
-      `g.V(ids).bothE().dedup()`,
-      { ids: nodeIds.map(nid => this.resolveKey(nid)) },
+      `g.V(${inlinedKeys}).bothE().dedup()`,
     );
     const allEdges = this.transformEdges(result._items || []);
     const idSet = new Set(nodeIds);
