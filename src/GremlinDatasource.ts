@@ -245,7 +245,7 @@ export class GremlinDatasource extends Datasource {
    * safe (each key may be a tuple, inlined directly into the query) and
    * avoids `within(<list-of-tuples>)`, which is unreliable on Cosmos DB
    * Gremlin. We then drop edges with an endpoint outside the `nodeIds`
-   * set client-side, since `bothE()` includes edges to neighbours we did
+   * set client-side, since `bothE()` includes edges to neighbors we did
    * not request.
    */
   private async fetchEdgesAmongNodes(nodeIds: string[]): Promise<EdgeData[]> {
@@ -272,7 +272,7 @@ export class GremlinDatasource extends Datasource {
     // Resolve the semantic type of the vertex. Default = Gremlin label
     // (TinkerPop convention). Hosts whose data stores a constant label
     // and the real type in a property (e.g. Bible Graph: every vertex
-    // labelled 'Unit', actual type on a `type` property) override via
+    // labeled 'Unit', actual type on a `type` property) override via
     // `getType` to surface the right value. If getType returns undefined,
     // fall back to the label.
     const resolvedType = this.config.getType?.(v as unknown as GremlinVertex) ?? (v.label as string | undefined);

@@ -82,7 +82,7 @@ and store the actual type in a property instead. `getType` lets such hosts
 tell the library where to find the real type.
 
 ```typescript
-// Default behaviour — equivalent to NOT supplying getType:
+// Default behavior — equivalent to NOT supplying getType:
 new GremlinDatasource({
   endpoint,
   getType: (v) => v.label,
