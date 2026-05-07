@@ -1,4 +1,4 @@
-import { Datasource } from '@inferagraph/core';
+import { DataSource } from '@inferagraph/core';
 import type {
   DataAdapterConfig, GraphData, NodeId, NodeData, EdgeData,
   ContentData, PaginationOptions, PaginatedResult, DataFilter,
@@ -8,7 +8,7 @@ import type { GremlinDataSourceConfig, GremlinVertex } from './types.js';
 
 const { driver } = gremlin;
 
-export class GremlinDataSource extends Datasource {
+export class GremlinDataSource extends DataSource {
   readonly name = 'gremlin';
   private client: InstanceType<typeof driver.Client> | null = null;
   private config: GremlinDataSourceConfig;

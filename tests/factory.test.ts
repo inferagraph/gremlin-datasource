@@ -7,8 +7,8 @@ import type { GremlinDataSourceConfig } from '../src/index.js';
 
 // Mock @inferagraph/core
 vi.mock('@inferagraph/core', () => {
-  class Datasource {}
-  return { Datasource };
+  class DataSource {}
+  return { DataSource };
 });
 
 // Mock the gremlin SDK so the factory can construct a client without
@@ -55,7 +55,7 @@ describe('gremlinDataSource factory', () => {
     vi.clearAllMocks();
   });
 
-  it('returns a DataSource-shaped instance (extends core Datasource, exposes name + lifecycle)', () => {
+  it('returns a DataSource-shaped instance (extends core DataSource, exposes name + lifecycle)', () => {
     const ds = gremlinDataSource(tinkerpopConfig);
     expect(ds).toBeInstanceOf(GremlinDataSource);
     expect(ds.name).toBe('gremlin');
